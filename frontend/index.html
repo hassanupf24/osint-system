@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSINT Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; background-color: #f4f4f4; }
+        .container { max-width: 1000px; margin: 0 auto; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; }
+        .section { margin-bottom: 2rem; border-bottom: 1px solid #eee; padding-bottom: 1rem; }
+        input, select { padding: 0.5rem; margin-right: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 0.5rem 1rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f8f9fa; }
+        pre { background: #f8f9fa; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>OSINT Dashboard (admin/admin)</h1>
+
+    <!-- Login -->
+    <div id="login-section" class="section">
+        <h2>Login</h2>
+        <input type="text" id="username" placeholder="Username" value="admin">
+        <input type="password" id="password" placeholder="Password" value="admin">
+        <button onclick="login()">Login</button>
+        <p id="login-msg"></p>
+    </div>
+
+    <!-- Data View -->
+    <div id="dashboard-section" class="section" style="display:none;">
+        <button onclick="logout()" style="float:right; background-color:#dc3545;">Logout</button>
+        <h2>Collect Data</h2>
+        <div>
+            <select id="target-type">
+                <option value="social_media">Social Media</option>
+                <option value="domain">Domain</option>
+            </select>
+            <input type="text" id="target" placeholder="Target (e.g. username, domain)">
+            <input type="text" id="platform" placeholder="Platform (e.g. twitter) (optional)">
+            <button onclick="submitTask()">Submit Task</button>
+        </div>
+        <p id="task-msg"></p>
+
+        <h2>Recent Data</h2>
+        <button onclick="loadData()">Refresh Data</button>
+        <table id="data-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Target</th>
+                    <th>Timestamp</th>
+                    <th>Data Preview</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <h2>Analysis Results</h2>
+        <button onclick="loadAnalysis()">Refresh Analysis</button>
+        <table id="analysis-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Score</th>
+                    <th>Result Preview</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:8000";
+    let token = localStorage.getItem("access_token");
+
+    function updateUI() {
+        if (token) {
+            document.getElementById("login-section").style.display = "none";
+            document.getElementById("dashboard-section").style.display = "block";
+            loadData();
+            loadAnalysis();
+        } else {
+            document.getElementById("login-section").style.display = "block";
+            document.getElementById("dashboard-section").style.display = "none";
+        }
+    }
+
+    async function login() {
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        
+        const formData = new FormData();
+        formData.append("username", username);
+        formData.append("password", password);
+
+        try {
+            const res = await fetch(`${API_URL}/token`, {
+                method: "POST",
+                body: formData
+            });
+            
+            if (!res.ok) throw new Error("Login failed");
+            
+            const data = await res.json();
+            token = data.access_token;
+            localStorage.setItem("access_token", token);
+            document.getElementById("login-msg").innerText = "";
+            updateUI();
+        } catch (e) {
+            document.getElementById("login-msg").innerText = e.message;
+            document.getElementById("login-msg").className = "error";
+        }
+    }
+
+    function logout() {
+        localStorage.removeItem("access_token");
+        token = null;
+        updateUI();
+    }
+
+    async function submitTask() {
+        const targetType = document.getElementById("target-type").value;
+        const target = document.getElementById("target").value;
+        const platform = document.getElementById("platform").value;
+
+        try {
+            const res = await fetch(`${API_URL}/api/v1/collect`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    target_type: targetType,
+                    target: target,
+                    platform: platform,
+                    priority: "normal"
+                })
+            });
+            
+            if (!res.ok) throw new Error("Task submission failed");
+            
+            document.getElementById("task-msg").innerText = "Task submitted successfully!";
+            document.getElementById("task-msg").className = "success";
+            setTimeout(() => { document.getElementById("task-msg").innerText = ""; }, 3000);
+        } catch (e) {
+            document.getElementById("task-msg").innerText = e.message;
+            document.getElementById("task-msg").className = "error";
+        }
+    }
+
+    async function loadData() {
+        try {
+            const res = await fetch(`${API_URL}/api/v1/data?limit=10`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            const tbody = document.querySelector("#data-table tbody");
+            tbody.innerHTML = "";
+            
+            data.forEach(item => {
+                const row = `<tr>
+                    <td>${item.source}</td>
+                    <td>${item.target}</td>
+                    <td>${new Date(item.timestamp).toLocaleString()}</td>
+                    <td><pre>${JSON.stringify(item.data, null, 2).substring(0, 100)}...</pre></td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    async function loadAnalysis() {
+        try {
+            const res = await fetch(`${API_URL}/api/v1/analysis?limit=10`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            const tbody = document.querySelector("#analysis-table tbody");
+            tbody.innerHTML = "";
+            
+            data.forEach(item => {
+                const row = `<tr>
+                    <td>${item.analysis_type}</td>
+                    <td>${item.score}</td>
+                    <td><pre>${JSON.stringify(item.result, null, 2).substring(0, 100)}...</pre></td>
+                    <td>${new Date(item.timestamp).toLocaleString()}</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    // Init
+    updateUI();
+</script>
+
+</body>
+</html>

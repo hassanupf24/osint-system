@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: osint_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - osint_net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: osint_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - osint_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: osint_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: osint_user
+      POSTGRES_PASSWORD: osint_password
+      POSTGRES_DB: osint_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - osint_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osint_user -d osint_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  osint_net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+  postgres_data:
